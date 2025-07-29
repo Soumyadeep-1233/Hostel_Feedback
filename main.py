@@ -246,7 +246,7 @@ def home_page():
         st.markdown("""
         ### About This System
         - Submit feedback about hostel facilities
-        - Rate mess food quality (Veg/Non-Veg/Special)
+        - Rate mess food quality (Veg/Non-Veg/Special/Food-Park)
         - Report bathroom cleanliness issues
         - Help improve hostel living conditions
             
@@ -306,7 +306,7 @@ def feedback_page():
         hostel_rating = st.selectbox("Overall Rating", ["A", "B", "C", "D", "E"])
         
         st.subheader("Mess Food Quality")
-        mess_type = st.radio("Food Type", ["Veg", "Non-Veg", "Special Diet"])
+        mess_type = st.radio("Food Type", ["Veg", "Non-Veg", "Special","Food-Park"])
         mess_feedback = st.text_area("Comments about mess food")
         mess_rating = st.selectbox("Food Rating", ["A", "B", "C", "D", "E"])
         
