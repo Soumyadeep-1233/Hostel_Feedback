@@ -25,7 +25,7 @@ st.set_page_config(
 # ======================
 # ADMIN CREDENTIALS [CHANGE THESE IN PRODUCTION]
 ADMIN_USERNAME = "hostel_admin"
-ADMIN_PASSWORD_HASH = hashlib.sha256("SecureAdminPass123!".encode()).hexdigest()
+ADMIN_PASSWORD_HASH = hashlib.sha256("Soumya@1234".encode()).hexdigest()
 
 # ======================
 # HELPER FUNCTIONS
