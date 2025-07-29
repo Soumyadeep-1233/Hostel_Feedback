@@ -36,8 +36,11 @@ def hash_password(password):
 
 def load_lottieurl(url):
     """Load Lottie animations from URL"""
-    r = requests.get(url)
-    return None if r.status_code != 200 else r.json()
+    try:
+        r = requests.get(url)
+        return None if r.status_code != 200 else r.json()
+    except:
+        return None
 
 def init_databases():
     """Initialize data storage"""
@@ -196,9 +199,9 @@ def main():
     # Initialize databases
     init_databases()
     
-    # Load animations
-    lottie_feedback = load_lottieurl("https://assets6.lottiefiles.com/packages/lf20_szdrhwiq.json")
-    lottie_admin = load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hu9uedjd.json")
+    # Initialize current page in session state
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 'Home'
 
     # Sidebar Navigation
     st.sidebar.title("Hostel Feedback System")
@@ -275,20 +278,26 @@ def register_page():
         confirm_pass = st.text_input("Confirm Password", type="password")
         
         if st.form_submit_button("Register Account"):
-            if password != confirm_pass:
+            if not all([full_name, username, reg_number, room_number, email, password, confirm_pass]):
+                st.error("Please fill in all fields!")
+            elif password != confirm_pass:
                 st.error("Passwords don't match!")
             else:
                 user_data = {
-                    'name': full_name,
-                    'email': email,
-                    'reg_no': reg_number,
-                    'room_no': room_number
+                    'name': [full_name],
+                    'email': [email],
+                    'reg_no': [reg_number],
+                    'room_no': [room_number],
+                    'last_login': [None]
                 }
                 success, message = register_user(username, password, user_data)
                 if success:
                     st.success(message + " Please login.")
+                    st.info("Redirecting to login page...")
                     time.sleep(2)
-                    st.switch_page("main.py?page=Login")
+                    # Use session state to control navigation instead of st.switch_page
+                    st.session_state.show_login = True
+                    st.rerun()
                 else:
                     st.error(message)
 
@@ -318,14 +327,14 @@ def feedback_page():
         
         if st.form_submit_button("Submit Feedback", type="primary"):
             feedback_data = {
-                'hostel_feedback': hostel_feedback,
-                'hostel_rating': hostel_rating,
-                'mess_feedback': mess_feedback,
-                'mess_type': mess_type,
-                'mess_rating': mess_rating,
-                'bathroom_feedback': bathroom_feedback,
-                'bathroom_rating': bathroom_rating,
-                'other_comments': other_comments
+                'hostel_feedback': [hostel_feedback],
+                'hostel_rating': [hostel_rating],
+                'mess_feedback': [mess_feedback],
+                'mess_type': [mess_type],
+                'mess_rating': [mess_rating],
+                'bathroom_feedback': [bathroom_feedback],
+                'bathroom_rating': [bathroom_rating],
+                'other_comments': [other_comments]
             }
             submit_feedback(st.session_state.current_user, feedback_data)
             st.success("Thank you for your feedback!")
@@ -405,6 +414,10 @@ def user_manager():
     
     st.title("👥 User Management")
     
+    if st.session_state.users_db.empty:
+        st.info("No users registered yet")
+        return
+    
     st.dataframe(st.session_state.users_db.drop(columns=['password']))
     
     st.subheader("User Actions")
@@ -427,6 +440,11 @@ def system_logs():
         return
     
     st.title("📜 System Logs")
+    
+    if st.session_state.admin_logs.empty:
+        st.info("No system logs yet")
+        return
+    
     st.dataframe(st.session_state.admin_logs)
     
     if st.button("Clear Logs", type="secondary"):
@@ -440,6 +458,3 @@ def system_logs():
 # ======================
 if __name__ == "__main__":
     main()
-
-
-
