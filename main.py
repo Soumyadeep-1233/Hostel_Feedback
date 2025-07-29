@@ -253,6 +253,7 @@ def home_page():
         """)
         
     with col2:
+        lottie_feedback = load_lottieurl("https://assets6.lottiefiles.com/packages/lf20_szdrhwiq.json")
         if lottie_feedback:
             st_lottie(lottie_feedback, height=300)
 
@@ -439,4 +440,5 @@ def system_logs():
 # ======================
 if __name__ == "__main__":
     main()
+
 
