@@ -365,7 +365,7 @@ def admin_dashboard():
         st.metric("Total Feedback", len(st.session_state.feedback_db))
         
     with col2:
-        if lottie_admin:
+        if lottie_admin := load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hu9uedjd.json"):
             st_lottie(lottie_admin, height=200)
     
     st.subheader("Recent Feedback")
@@ -439,3 +439,4 @@ def system_logs():
 # ======================
 if __name__ == "__main__":
     main()
+
