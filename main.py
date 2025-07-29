@@ -61,6 +61,14 @@ def init_databases():
         st.session_state.admin_logs = pd.DataFrame(columns=[
             'timestamp', 'action', 'details'
         ])
+    
+    # Initialize session state variables for login persistence
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
 
 def log_admin_action(action, details=""):
     """Record admin activities"""
@@ -137,20 +145,36 @@ def submit_feedback(username, feedback_data):
 def show_admin_sidebar():
     """Admin-specific sidebar options"""
     st.sidebar.header("Admin Controls")
+    st.sidebar.success("✅ Admin Logged In")
+    
     if st.sidebar.button("🔄 Refresh Data"):
         st.rerun()
     
     st.sidebar.divider()
     if st.sidebar.button("🚪 Logout Admin", type="primary"):
-        st.session_state.clear()
+        # Clear admin session
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.session_state.is_admin = False
+        log_admin_action("ADMIN_LOGOUT")
+        st.success("Admin logged out successfully!")
+        time.sleep(1)
         st.rerun()
 
 def show_user_sidebar():
     """Regular user sidebar options"""
     st.sidebar.header(f"Welcome {st.session_state.current_user}")
+    
+    # Show current login status
+    st.sidebar.success("✅ Logged In")
+    
     if st.sidebar.button("🚪 Logout"):
+        # Clear login session
         st.session_state.logged_in = False
         st.session_state.current_user = None
+        st.session_state.is_admin = False
+        st.success("Logged out successfully!")
+        time.sleep(1)
         st.rerun()
 
 def render_login_page():
@@ -196,8 +220,15 @@ def render_login_page():
 # MAIN APPLICATION
 # ======================
 def main():
-    # Initialize databases
+    # Initialize databases and session state
     init_databases()
+    
+    # Debug info (remove in production)
+    if st.sidebar.checkbox("Show Debug Info", value=False):
+        st.sidebar.write("Session State:")
+        st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
+        st.sidebar.write(f"Current user: {st.session_state.get('current_user', 'None')}")
+        st.sidebar.write(f"Is admin: {st.session_state.get('is_admin', False)}")
     
     # Initialize current page in session state
     if 'current_page' not in st.session_state:
@@ -211,8 +242,10 @@ def main():
         show_admin_sidebar()
     elif st.session_state.get('logged_in'):
         show_user_sidebar()
+    else:
+        st.sidebar.info("Please login to access all features")
     
-    # Navigation options
+    # Navigation options based on authentication status
     if st.session_state.get('is_admin'):
         pages = {
             "Dashboard": admin_dashboard,
@@ -234,8 +267,15 @@ def main():
             "FAQ": faq_page
         }
     
+    # Handle page selection
     page = st.sidebar.selectbox("Menu", list(pages.keys()))
-    pages[page]()
+    
+    # Execute the selected page function
+    try:
+        pages[page]()
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        st.info("Please try refreshing the page or contact support.")
 
 # ======================
 # PAGE COMPONENTS
