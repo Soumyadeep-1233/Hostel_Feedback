@@ -1,5 +1,5 @@
 # Hostel Feedback System with Admin Controls
-# Streamlit Application - Complete Code
+# Streamlit Application - Complete Updated Code
 
 import streamlit as st
 import pandas as pd
@@ -8,7 +8,6 @@ from datetime import datetime
 import hashlib
 from streamlit_lottie import st_lottie
 import requests
-import json
 
 # ======================
 # CONFIGURATION
@@ -167,7 +166,7 @@ def render_login_page():
                     st.session_state.current_user = username
                     st.success("Login successful!")
                     time.sleep(1)
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Invalid credentials")
 
@@ -185,7 +184,7 @@ def render_login_page():
                     log_admin_action("ADMIN_LOGIN")
                     st.success("Admin access granted!")
                     time.sleep(1)
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("Invalid admin credentials")
 
@@ -214,7 +213,7 @@ def main():
         pages = {
             "Dashboard": admin_dashboard,
             "View Feedback": feedback_viewer,
-            "User Management": user_manager,
+            "User  Management": user_manager,
             "System Logs": system_logs
         }
     elif st.session_state.get('logged_in'):
@@ -246,7 +245,7 @@ def home_page():
         st.markdown("""
         ### About This System
         - Submit feedback about hostel facilities
-        - Rate mess food quality (Veg/Non-Veg/Special)
+        - Rate mess food quality (Veg/Non-Veg/Special/Food Park)
         - Report bathroom cleanliness issues
         - Help improve hostel living conditions
             
@@ -254,7 +253,7 @@ def home_page():
         """)
         
     with col2:
-        if lottie_feedback := load_lottieurl("https://assets6.lottiefiles.com/packages/lf20_szdrhwiq.json"):
+        if lottie_feedback:
             st_lottie(lottie_feedback, height=300)
 
 def register_page():
@@ -288,7 +287,7 @@ def register_page():
                 if success:
                     st.success(message + " Please login.")
                     time.sleep(2)
-                    st.switch_page("main.py?page=Login")
+                    st.experimental_rerun()  # Use rerun instead of switch_page
                 else:
                     st.error(message)
 
@@ -306,7 +305,7 @@ def feedback_page():
         hostel_rating = st.selectbox("Overall Rating", ["A", "B", "C", "D", "E"])
         
         st.subheader("Mess Food Quality")
-        mess_type = st.radio("Food Type", ["Veg", "Non-Veg", "Special Diet"])
+        mess_type = st.radio("Food Type", ["Veg", "Non-Veg", "Special", "Food Park"])  # Added Food Park
         mess_feedback = st.text_area("Comments about mess food")
         mess_rating = st.selectbox("Food Rating", ["A", "B", "C", "D", "E"])
         
@@ -366,7 +365,7 @@ def admin_dashboard():
         st.metric("Total Feedback", len(st.session_state.feedback_db))
         
     with col2:
-        if lottie_admin := load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hu9uedjd.json"):
+        if lottie_admin:
             st_lottie(lottie_admin, height=200)
     
     st.subheader("Recent Feedback")
@@ -407,7 +406,7 @@ def user_manager():
     
     st.dataframe(st.session_state.users_db.drop(columns=['password']))
     
-    st.subheader("User Actions")
+    st.subheader("User  Actions")
     delete_user = st.selectbox(
         "Select user to remove",
         st.session_state.users_db['username'].values
@@ -418,7 +417,7 @@ def user_manager():
             st.session_state.users_db['username'] != delete_user
         ]
         log_admin_action("USER_DELETION", f"Deleted user: {delete_user}")
-        st.success(f"User {delete_user} removed")
+        st.success(f"User  {delete_user} removed")
         st.rerun()
 
 def system_logs():
