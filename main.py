@@ -24,25 +24,43 @@ st.set_page_config(
     }
 )
 
-# Add LinkedIn-compatible meta tags
-st.markdown("""
-<head>
-    <meta property="og:title" content="Hostel Feedback System - Student Portal" />
-    <meta property="og:description" content="Comprehensive feedback management system for hostel facilities, mess services, and accommodation quality." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://hostelfeedback-xyx8cndtncqprzs7lffq4c.streamlit.app/" />
-    <meta property="og:image" content="https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1200&h=630&fit=crop" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Hostel Feedback System" />
-    <meta name="twitter:description" content="Student feedback portal for hostel and mess services" />
-    <meta name="description" content="Hostel Feedback System - Submit and manage feedback for hostel facilities, mess food quality, and accommodation services." />
-    <meta name="keywords" content="hostel, feedback, student portal, mess, accommodation, facility management" />
-    <meta name="robots" content="index, follow" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-</head>
-""", unsafe_allow_html=True)
+# Check if this is a social media crawler
+def detect_crawler():
+    """Detect if the request is from a social media crawler"""
+    try:
+        # Check query params for crawler indicators
+        query_params = st.experimental_get_query_params()
+        
+        # Check common crawler parameters
+        if any(key in query_params for key in ['_escaped_fragment_', 'crawl', 'bot']):
+            return True
+            
+        # If we can detect user agent from headers (not always available in Streamlit)
+        return False
+    except:
+        return False
+
+# Serve static content for crawlers
+if detect_crawler():
+    st.markdown("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Hostel Feedback System - Student Portal</title>
+        <meta property="og:title" content="Hostel Feedback Management System" />
+        <meta property="og:description" content="Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality management." />
+        <meta property="og:type" content="website" />
+        <meta property="og:image" content="https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1200&h=630&fit=crop" />
+        <meta name="description" content="Student feedback system for hostel facilities, mess food quality, and accommodation services." />
+    </head>
+    <body>
+        <h1>Hostel Feedback Management System</h1>
+        <p>Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality.</p>
+        <p>Features: Secure registration, feedback submission, administrative dashboard, real-time analytics.</p>
+    </body>
+    </html>
+    """, unsafe_allow_html=True)
+    st.stop()
 
 # ======================
 # SECURITY SETTINGS
@@ -244,11 +262,23 @@ def render_login_page():
 # PAGE COMPONENTS
 # ======================
 def home_page():
-    # Static content first for LinkedIn crawler
+    # Serve static HTML for crawlers first
+    st.markdown("""
+    <div style="display: none;" class="crawler-content">
+        <h1>Hostel Feedback Management System</h1>
+        <p>Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality management.</p>
+        <p>Features include secure student registration, feedback submission with ratings, administrative dashboard, and real-time analytics.</p>
+        <p>Students can rate hostel accommodation, mess food quality (Veg/Non-Veg/Special/Food-Park), bathroom cleanliness, and provide suggestions.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Regular content for users
     st.title("🏠 Hostel Feedback Management System")
     st.subheader("Comprehensive Student Feedback Portal")
     
-    # Static description for crawlers
+    # Static description for crawlers - must be visible text
+    st.write("**Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality management.**")
+    
     st.markdown("""
     ## Welcome to Our Hostel Feedback System
     
@@ -283,23 +313,13 @@ def home_page():
         """)
         
     with col2:
-        # Try to load animation, but don't break if it fails
-        try:
-            lottie_url = "https://assets6.lottiefiles.com/packages/lf20_szdrhwiq.json"
-            lottie_feedback = load_lottie_safe(lottie_url)
-            if lottie_feedback:
-                from streamlit_lottie import st_lottie
-                st_lottie(lottie_feedback, height=300)
-            else:
-                st.image("https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=400&h=300&fit=crop", 
-                        caption="Hostel Management System")
-        except ImportError:
-            # Fallback if streamlit_lottie is not available
-            st.image("https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=400&h=300&fit=crop", 
-                    caption="Hostel Management System")
-        except Exception:
-            # Final fallback
-            st.info("🏠 Hostel Feedback Portal")
+        # Simple fallback without external dependencies
+        st.info("🏠 Hostel Feedback Portal")
+        st.write("Submit feedback for:")
+        st.write("• Hostel facilities")
+        st.write("• Mess food quality")
+        st.write("• Bathroom cleanliness")
+        st.write("• General suggestions")
 
 def register_page():
     st.title("📝 Student Registration")
@@ -611,21 +631,19 @@ def system_logs():
 # ======================
 # MAIN APPLICATION
 # ======================
-def handle_social_crawlers():
-    """Handle social media crawler requests"""
-    if 'HTTP_USER_AGENT' in st.experimental_get_query_params():
-        user_agent = st.experimental_get_query_params().get('HTTP_USER_AGENT', [''])[0]
-        if any(bot in user_agent.lower() for bot in ['linkedinbot', 'facebookexternalhit', 'twitterbot']):
-            st.markdown("""
-            # Hostel Feedback Management System
-            Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality.
-            """)
-            return True
-    return False
-    
 def main():
     # Initialize databases and session state
     init_databases()
+    
+    # Immediately display static content for crawlers
+    st.markdown("""
+    <div style="visibility: hidden; height: 0;">
+        <h1>Hostel Feedback Management System</h1>
+        <p>Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality management.</p>
+        <p>Features: Secure student registration, feedback submission with ratings, administrative dashboard, real-time analytics.</p>
+        <p>Students can submit feedback about hostel accommodation, mess food quality (Vegetarian, Non-Vegetarian, Special meals, Food-Park), bathroom cleanliness, and general suggestions for improvement.</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Show debug info only in development
     if st.sidebar.checkbox("🔧 Debug Mode", value=False):
@@ -697,5 +715,30 @@ def add_footer():
 # APPLICATION ENTRY
 # ======================
 if __name__ == "__main__":
+    # Add robots.txt content for crawlers
+    st.markdown("""
+    <script>
+    // Add meta tags dynamically for social crawlers
+    if (document.querySelector('meta[property="og:title"]') === null) {
+        const metaTags = [
+            {property: "og:title", content: "Hostel Feedback Management System"},
+            {property: "og:description", content: "Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality."},
+            {property: "og:type", content: "website"},
+            {property: "og:image", content: "https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1200&h=630&fit=crop"},
+            {name: "description", content: "Student feedback system for hostel facilities, mess food quality, and accommodation services."},
+            {name: "robots", content: "index, follow"}
+        ];
+        
+        metaTags.forEach(tag => {
+            const meta = document.createElement('meta');
+            if (tag.property) meta.setAttribute('property', tag.property);
+            if (tag.name) meta.setAttribute('name', tag.name);
+            meta.setAttribute('content', tag.content);
+            document.head.appendChild(meta);
+        });
+    }
+    </script>
+    """, unsafe_allow_html=True)
+    
     main()
     add_footer()
