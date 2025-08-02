@@ -6,7 +6,483 @@ import pandas as pd
 import time
 from datetime import datetime
 import hashlib
+import requestsimport streamlit as st
+import pandas as pd
+import time
+from datetime import datetime
+import hashlib
 import requests
+import json
+
+# ======================
+# CONFIGURATION & SEO
+# ======================
+st.set_page_config(
+    page_title="Hostel Feedback System - Student Portal",
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Report a bug': None,
+        'About': "Hostel Feedback Management System for Students"
+    }
+)
+
+# Add LinkedIn-compatible meta tags
+st.markdown("""
+<head>
+    <meta property="og:title" content="Hostel Feedback System - Student Portal" />
+    <meta property="og:description" content="Comprehensive feedback management system for hostel facilities, mess services, and accommodation quality." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://hostelfeedback-xyx8cndtncqprzs7lffq4c.streamlit.app/" />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1200&h=630&fit=crop" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hostel Feedback System" />
+    <meta name="twitter:description" content="Student feedback portal for hostel and mess services" />
+    <meta name="description" content="Hostel Feedback System - Submit and manage feedback for hostel facilities, mess food quality, and accommodation services." />
+    <meta name="keywords" content="hostel, feedback, student portal, mess, accommodation, facility management" />
+    <meta name="robots" content="index, follow" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+""", unsafe_allow_html=True)
+
+# ======================
+# SECURITY SETTINGS
+# ======================
+# ADMIN CREDENTIALS [CHANGE THESE IN PRODUCTION]
+ADMIN_USERNAME = "hostel_admin"
+ADMIN_PASSWORD_HASH = hashlib.sha256("Soumya@1234".encode()).hexdigest()
+
+# ======================
+# HELPER FUNCTIONS
+# ======================
+def hash_password(password):
+    """Securely hash passwords using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_lottie_safe(url):
+    """Safely load Lottie animations with error handling"""
+    try:
+        r = requests.get(url, timeout=5)
+        return None if r.status_code != 200 else r.json()
+    except Exception:
+        return None
+
+def init_databases():
+    """Initialize data storage"""
+    if 'users_db' not in st.session_state:
+        st.session_state.users_db = pd.DataFrame(columns=[
+            'username', 'password', 'name', 'email', 
+            'reg_no', 'room_no', 'last_login'
+        ])
+    
+    if 'feedback_db' not in st.session_state:
+        st.session_state.feedback_db = pd.DataFrame(columns=[
+            'username', 'timestamp', 'hostel_feedback', 'hostel_rating',
+            'mess_feedback', 'mess_type', 'mess_rating',
+            'bathroom_feedback', 'bathroom_rating', 'other_comments'
+        ])
+    
+    if 'admin_logs' not in st.session_state:
+        st.session_state.admin_logs = pd.DataFrame(columns=[
+            'timestamp', 'action', 'details'
+        ])
+    
+    # Initialize session state variables for login persistence
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+
+def log_admin_action(action, details=""):
+    """Record admin activities"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_log = pd.DataFrame({
+        'timestamp': [timestamp],
+        'action': [action],
+        'details': [details]
+    })
+    st.session_state.admin_logs = pd.concat(
+        [st.session_state.admin_logs, new_log], 
+        ignore_index=True
+    )
+
+# ======================
+# AUTHENTICATION FUNCTIONS
+# ======================
+def authenticate_admin(username, password):
+    """Verify admin credentials"""
+    return (username == ADMIN_USERNAME and 
+            hash_password(password) == ADMIN_PASSWORD_HASH)
+
+def authenticate_user(username, password):
+    """Verify student credentials"""
+    user = st.session_state.users_db[
+        (st.session_state.users_db['username'] == username) & 
+        (st.session_state.users_db['password'] == hash_password(password))
+    ]
+    if not user.empty:
+        st.session_state.users_db.loc[
+            st.session_state.users_db['username'] == username, 
+            'last_login'
+        ] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return True
+    return False
+
+def register_user(username, password, user_data):
+    """Register new student"""
+    if username in st.session_state.users_db['username'].values:
+        return False, "Username already exists"
+    
+    new_user = pd.DataFrame({
+        'username': [username],
+        'password': [hash_password(password)],
+        **user_data
+    })
+    
+    st.session_state.users_db = pd.concat(
+        [st.session_state.users_db, new_user], 
+        ignore_index=True
+    )
+    return True, "Registration successful"
+
+# ======================
+# FEEDBACK FUNCTIONS
+# ======================
+def submit_feedback(username, feedback_data):
+    """Submit new feedback"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_feedback = pd.DataFrame({
+        'username': [username],
+        'timestamp': [timestamp],
+        **feedback_data
+    })
+    st.session_state.feedback_db = pd.concat(
+        [st.session_state.feedback_db, new_feedback], 
+        ignore_index=True
+    )
+    return True
+
+# ======================
+# UI COMPONENTS
+# ======================
+def show_admin_sidebar():
+    """Admin-specific sidebar options"""
+    st.sidebar.header("Admin Controls")
+    st.sidebar.success("✅ Admin Logged In")
+    
+    if st.sidebar.button("🔄 Refresh Data"):
+        st.rerun()
+    
+    st.sidebar.divider()
+    if st.sidebar.button("🚪 Logout Admin", type="primary"):
+        # Clear admin session
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.session_state.is_admin = False
+        log_admin_action("ADMIN_LOGOUT")
+        st.success("Admin logged out successfully!")
+        time.sleep(1)
+        st.rerun()
+
+def show_user_sidebar():
+    """Regular user sidebar options"""
+    st.sidebar.header(f"Welcome {st.session_state.current_user}")
+    
+    # Show current login status
+    st.sidebar.success("✅ Logged In")
+    
+    if st.sidebar.button("🚪 Logout"):
+        # Clear login session
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.session_state.is_admin = False
+        st.success("Logged out successfully!")
+        time.sleep(1)
+        st.rerun()
+
+def render_login_page():
+    """Login page with tabs for admin/student"""
+    st.title("🔒 Authentication")
+    
+    login_tab, admin_tab = st.tabs(["Student Login", "Admin Login"])
+    
+    with login_tab:
+        with st.form("student_login"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            
+            if st.form_submit_button("Login", type="primary"):
+                if authenticate_user(username, password):
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = username
+                    st.success("Login successful!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
+
+    with admin_tab:
+        with st.form("admin_login"):
+            st.warning("Administrative Access Only")
+            admin_user = st.text_input("Admin Username")
+            admin_pass = st.text_input("Admin Password", type="password")
+            
+            if st.form_submit_button("Admin Login", type="primary"):
+                if authenticate_admin(admin_user, admin_pass):
+                    st.session_state.is_admin = True
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = "admin"
+                    log_admin_action("ADMIN_LOGIN")
+                    st.success("Admin access granted!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Invalid admin credentials")
+
+# ======================
+# PAGE COMPONENTS
+# ======================
+def home_page():
+    # Static content first for LinkedIn crawler
+    st.title("🏠 Hostel Feedback Management System")
+    st.subheader("Comprehensive Student Feedback Portal")
+    
+    # Static description for crawlers
+    st.markdown("""
+    ## Welcome to Our Hostel Feedback System
+    
+    **A comprehensive platform for students to share feedback about:**
+    - Hostel accommodation facilities
+    - Mess food quality (Vegetarian, Non-Vegetarian, Special meals)
+    - Bathroom and hygiene standards
+    - General suggestions for improvement
+    
+    ### Features:
+    - ✅ Secure student registration and login
+    - 📝 Easy feedback submission with ratings
+    - 👨‍💼 Administrative dashboard for management
+    - 📊 Real-time feedback analytics
+    - 🔒 Data privacy and security
+    """)
+    
+    col1, col2 = st.columns([3, 2])
+    with col1:
+        st.info("**Please register or login to submit feedback**")
+        
+        # Quick stats (if data exists)
+        if not st.session_state.feedback_db.empty:
+            st.metric("Total Feedback Submissions", len(st.session_state.feedback_db))
+        
+        st.markdown("""
+        ### How It Works:
+        1. **Register** with your student details
+        2. **Login** to access the feedback portal
+        3. **Submit** detailed feedback with ratings
+        4. **Help** improve hostel facilities for everyone
+        """)
+        
+    with col2:
+        # Try to load animation, but don't break if it fails
+        try:
+            lottie_url = "https://assets6.lottiefiles.com/packages/lf20_szdrhwiq.json"
+            lottie_feedback = load_lottie_safe(lottie_url)
+            if lottie_feedback:
+                from streamlit_lottie import st_lottie
+                st_lottie(lottie_feedback, height=300)
+            else:
+                st.image("https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=400&h=300&fit=crop", 
+                        caption="Hostel Management System")
+        except ImportError:
+            # Fallback if streamlit_lottie is not available
+            st.image("https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=400&h=300&fit=crop", 
+                    caption="Hostel Management System")
+        except Exception:
+            # Final fallback
+            st.info("🏠 Hostel Feedback Portal")
+
+def register_page():
+    st.title("📝 Student Registration")
+    st.write("Create your account to start submitting feedback")
+    
+    with st.form("registration_form"):
+        st.subheader("Personal Information")
+        col1, col2 = st.columns(2)
+        with col1:
+            full_name = st.text_input("Full Name*")
+            username = st.text_input("Choose Username*")
+        with col2:
+            reg_number = st.text_input("Registration Number*")
+            room_number = st.text_input("Room Number*")
+        
+        email = st.text_input("College Email*")
+        password = st.text_input("Create Password*", type="password")
+        confirm_pass = st.text_input("Confirm Password*", type="password")
+        
+        if st.form_submit_button("Register Account", type="primary"):
+            if not all([full_name, username, reg_number, room_number, email, password, confirm_pass]):
+                st.error("Please fill in all required fields marked with *")
+            elif password != confirm_pass:
+                st.error("Passwords don't match!")
+            elif len(password) < 6:
+                st.error("Password must be at least 6 characters long")
+            else:
+                user_data = {
+                    'name': [full_name],
+                    'email': [email],
+                    'reg_no': [reg_number],
+                    'room_no': [room_number],
+                    'last_login': [None]
+                }
+                success, message = register_user(username, password, user_data)
+                if success:
+                    st.success(message + " Please login now.")
+                    st.info("Registration completed! Use the Login page to access your account.")
+                else:
+                    st.error(message)
+
+def feedback_page():
+    if not st.session_state.get('logged_in'):
+        st.warning("Please login first to submit feedback")
+        return
+    
+    st.title("📝 Submit Your Feedback")
+    st.write(f"Welcome back, **{st.session_state.current_user}**!")
+    
+    with st.form("feedback_form"):
+        st.subheader("🏠 Hostel Facilities")
+        hostel_feedback = st.text_area("Share your thoughts about hostel facilities", 
+                                     placeholder="Room conditions, common areas, WiFi, etc.")
+        hostel_rating = st.selectbox("Overall Hostel Rating", 
+                                   ["A (Excellent)", "B (Good)", "C (Average)", "D (Below Average)", "E (Poor)"])
+        
+        st.subheader("🍽️ Mess Food Quality")
+        mess_type = st.radio("Food Type Today", ["Veg", "Non-Veg", "Special", "Food-Park"])
+        mess_feedback = st.text_area("Comments about mess food", 
+                                   placeholder="Taste, quantity, hygiene, variety, etc.")
+        mess_rating = st.selectbox("Food Quality Rating", 
+                                 ["A (Excellent)", "B (Good)", "C (Average)", "D (Below Average)", "E (Poor)"])
+        
+        st.subheader("🚿 Bathroom & Hygiene")
+        bathroom_feedback = st.text_area("Bathroom cleanliness feedback", 
+                                       placeholder="Cleanliness, maintenance, supplies, etc.")
+        bathroom_rating = st.selectbox("Hygiene Rating", 
+                                     ["A (Excellent)", "B (Good)", "C (Average)", "D (Below Average)", "E (Poor)"])
+        
+        st.subheader("💭 Additional Suggestions")
+        other_comments = st.text_area("Any other suggestions or concerns", 
+                                    placeholder="Security, recreation, study areas, etc.")
+        
+        if st.form_submit_button("Submit Feedback", type="primary"):
+            feedback_data = {
+                'hostel_feedback': [hostel_feedback],
+                'hostel_rating': [hostel_rating.split()[0]],  # Extract letter grade
+                'mess_feedback': [mess_feedback],
+                'mess_type': [mess_type],
+                'mess_rating': [mess_rating.split()[0]],  # Extract letter grade
+                'bathroom_feedback': [bathroom_feedback],
+                'bathroom_rating': [bathroom_rating.split()[0]],  # Extract letter grade
+                'other_comments': [other_comments]
+            }
+            
+            if submit_feedback(st.session_state.current_user, feedback_data):
+                st.success("✅ Thank you for your valuable feedback!")
+                st.balloons()
+                st.info("Your feedback helps us improve hostel services for everyone.")
+
+def faq_page():
+    st.title("❓ Frequently Asked Questions")
+    st.write("Find answers to common questions about the feedback system")
+    
+    with st.expander("How do I submit feedback?", expanded=True):
+        st.write("""
+        1. **Register** an account with your student details
+        2. **Login** using your credentials
+        3. Navigate to **Submit Feedback**
+        4. Fill out the feedback form with your comments and ratings
+        5. Click **Submit** to send your feedback
+        """)
+    
+    with st.expander("What do the rating grades mean?"):
+        st.write("""
+        **Rating Scale:**
+        - **A (Excellent)**: Outstanding quality, no issues
+        - **B (Good)**: Above average, minor improvements needed
+        - **C (Average)**: Acceptable but room for improvement
+        - **D (Below Average)**: Significant issues, needs attention
+        - **E (Poor)**: Major problems, immediate action required
+        """)
+    
+    with st.expander("Is my feedback confidential?"):
+        st.write("""
+        Yes, your feedback is handled with strict confidentiality:
+        - Only authorized administrators can view submissions
+        - Personal information is protected
+        - Feedback is used solely for facility improvement
+        - No individual responses are shared publicly
+        """)
+    
+    with st.expander("How often can I submit feedback?"):
+        st.write("You can submit feedback as often as needed. We encourage regular submissions to help us maintain and improve services.")
+    
+    with st.expander("What happens after I submit feedback?"):
+        st.write("""
+        1. Your feedback is immediately stored in our system
+        2. Administrative team reviews all submissions regularly
+        3. Issues are prioritized based on frequency and severity
+        4. Improvements are implemented where possible
+        5. Major changes may be communicated to all residents
+        """)
+
+# ======================
+# ADMIN PAGES
+# ======================
+def admin_dashboard():
+    if not st.session_state.get('is_admin'):
+        st.warning("⚠️ Unauthorized access - Admin login required")
+        return
+    
+    st.title("📊 Administrative Dashboard")
+    st.write("Comprehensive overview of hostel feedback system")
+    
+    # Key Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("👥 Total Users", len(st.session_state.users_db))
+    with col2:
+        st.metric("📝 Total Feedback", len(st.session_state.feedback_db))
+    with col3:
+        if not st.session_state.feedback_db.empty:
+            recent_feedback = len(st.session_state.feedback_db[
+                pd.to_datetime(st.session_state.feedback_db['timestamp']) >= 
+                pd.Timestamp.now() - pd.Timedelta(days=7)
+            ])
+            st.metric("📅 This Week", recent_feedback)
+        else:
+            st.metric("📅 This Week", 0)
+    with col4:
+        if not st.session_state.admin_logs.empty:
+            st.metric("📜 System Logs", len(st.session_state.admin_logs))
+        else:
+            st.metric("📜 System Logs", 0)
+    
+    # Recent Activity
+    st.subheader("🕒 Recent Feedback Submissions")
+    if not st.session_state.feedback_db.empty:
+        recent_df = st.session_state.feedback_db.sort_values('timestamp', ascending=False).head(10)
+        st.dataframe(recent_df[['username', 'timestamp', 'hostel_rating', 'mess_rating', 'bathroom_rating']], 
+                    use_container_width=True)
+    else:
+        st.info("No feedback submissions yet")
+    
+    # Quick Actions
+    st.subheader("⚡ Quick Actions")
+   
 import json
 
 # ======================
