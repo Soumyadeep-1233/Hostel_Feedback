@@ -611,6 +611,18 @@ def system_logs():
 # ======================
 # MAIN APPLICATION
 # ======================
+def handle_social_crawlers():
+    """Handle social media crawler requests"""
+    if 'HTTP_USER_AGENT' in st.experimental_get_query_params():
+        user_agent = st.experimental_get_query_params().get('HTTP_USER_AGENT', [''])[0]
+        if any(bot in user_agent.lower() for bot in ['linkedinbot', 'facebookexternalhit', 'twitterbot']):
+            st.markdown("""
+            # Hostel Feedback Management System
+            Comprehensive student feedback portal for hostel facilities, mess services, and accommodation quality.
+            """)
+            return True
+    return False
+    
 def main():
     # Initialize databases and session state
     init_databases()
