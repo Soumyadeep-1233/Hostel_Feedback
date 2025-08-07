@@ -1,7 +1,7 @@
 # Hostel Feedback System with SQLite Database
 # Streamlit Application - Complete Code
 
-import streamlit as st
+import streamlit as 
 import sqlite3
 import pandas as pd
 import time
