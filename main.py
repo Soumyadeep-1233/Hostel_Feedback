@@ -1,9 +1,8 @@
-# Hostel Feedback System with MySQL Database
+# Hostel Feedback System with SQLite Database
 # Streamlit Application - Complete Code
 
 import streamlit as st
-import mysql.connector
-from mysql.connector import Error
+import sqlite3
 import pandas as pd
 import time
 from datetime import datetime
@@ -27,16 +26,8 @@ st.set_page_config(
 # ======================
 # DATABASE CONFIGURATION
 # ======================
-# MySQL Database Configuration
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'database': os.getenv('DB_NAME', 'hostel_feedback_db'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'your_password_here'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'charset': 'utf8mb4',
-    'autocommit': True
-}
+# SQLite Database Configuration
+DB_PATH = "hostel_feedback.db"
 
 # ======================
 # SECURITY SETTINGS
@@ -53,13 +44,14 @@ def get_db_connection():
     """Context manager for database connections"""
     connection = None
     try:
-        connection = mysql.connector.connect(**DB_CONFIG)
+        connection = sqlite3.connect(DB_PATH)
+        connection.row_factory = sqlite3.Row  # Enable column access by name
         yield connection
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Database connection error: {e}")
         yield None
     finally:
-        if connection and connection.is_connected():
+        if connection:
             connection.close()
 
 def initialize_database():
@@ -67,29 +59,29 @@ def initialize_database():
     create_tables_sql = """
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password VARCHAR(64) NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) NOT NULL,
-        reg_no VARCHAR(20) NOT NULL,
-        room_no VARCHAR(10) NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        reg_no TEXT NOT NULL,
+        room_no TEXT NOT NULL,
         last_login DATETIME,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Feedback table
     CREATE TABLE IF NOT EXISTS feedback (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
         timestamp DATETIME NOT NULL,
         hostel_feedback TEXT,
-        hostel_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        hostel_rating TEXT NOT NULL CHECK (hostel_rating IN ('A', 'B', 'C', 'D', 'E')),
         mess_feedback TEXT,
-        mess_type ENUM('Veg', 'Non-Veg', 'Special', 'Food-Park') NOT NULL,
-        mess_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        mess_type TEXT NOT NULL CHECK (mess_type IN ('Veg', 'Non-Veg', 'Special', 'Food-Park')),
+        mess_rating TEXT NOT NULL CHECK (mess_rating IN ('A', 'B', 'C', 'D', 'E')),
         bathroom_feedback TEXT,
-        bathroom_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        bathroom_rating TEXT NOT NULL CHECK (bathroom_rating IN ('A', 'B', 'C', 'D', 'E')),
         other_comments TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
@@ -97,9 +89,9 @@ def initialize_database():
 
     -- Admin logs table
     CREATE TABLE IF NOT EXISTS admin_logs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp DATETIME NOT NULL,
-        action VARCHAR(100) NOT NULL,
+        action TEXT NOT NULL,
         details TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -109,14 +101,10 @@ def initialize_database():
         with get_db_connection() as connection:
             if connection:
                 cursor = connection.cursor()
-                # Execute each CREATE TABLE statement separately
-                for statement in create_tables_sql.split(';'):
-                    statement = statement.strip()
-                    if statement and not statement.startswith('--'):
-                        cursor.execute(statement)
-                cursor.close()
+                cursor.executescript(create_tables_sql)
+                connection.commit()
                 return True
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Database initialization error: {e}")
         return False
     return False
@@ -131,7 +119,7 @@ def hash_password(password):
 def load_lottieurl(url):
     """Load Lottie animations from URL"""
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=5)
         return None if r.status_code != 200 else r.json()
     except:
         return None
@@ -153,11 +141,13 @@ def log_admin_action(action, details=""):
         with get_db_connection() as connection:
             if connection:
                 cursor = connection.cursor()
-                timestamp = datetime.now()
-                query = "INSERT INTO admin_logs (timestamp, action, details) VALUES (%s, %s, %s)"
-                cursor.execute(query, (timestamp, action, details))
-                cursor.close()
-    except Error as e:
+                timestamp = datetime.now().isoformat()
+                cursor.execute(
+                    "INSERT INTO admin_logs (timestamp, action, details) VALUES (?, ?, ?)",
+                    (timestamp, action, details)
+                )
+                connection.commit()
+    except sqlite3.Error as e:
         st.error(f"Error logging admin action: {e}")
 
 # ======================
@@ -171,9 +161,8 @@ def get_user_count():
                 cursor = connection.cursor()
                 cursor.execute("SELECT COUNT(*) FROM users")
                 count = cursor.fetchone()[0]
-                cursor.close()
                 return count
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Error getting user count: {e}")
     return 0
 
@@ -185,9 +174,8 @@ def get_feedback_count():
                 cursor = connection.cursor()
                 cursor.execute("SELECT COUNT(*) FROM feedback")
                 count = cursor.fetchone()[0]
-                cursor.close()
                 return count
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Error getting feedback count: {e}")
     return 0
 
@@ -196,19 +184,22 @@ def get_recent_feedback(limit=5):
     try:
         with get_db_connection() as connection:
             if connection:
-                cursor = connection.cursor(dictionary=True)
+                cursor = connection.cursor()
                 query = """
                 SELECT username, timestamp, hostel_rating, mess_type, mess_rating, 
                        bathroom_rating, other_comments 
                 FROM feedback 
                 ORDER BY timestamp DESC 
-                LIMIT %s
+                LIMIT ?
                 """
                 cursor.execute(query, (limit,))
                 results = cursor.fetchall()
-                cursor.close()
-                return pd.DataFrame(results)
-    except Error as e:
+                
+                # Convert to list of dictionaries
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
         st.error(f"Error getting recent feedback: {e}")
     return pd.DataFrame()
 
@@ -217,12 +208,15 @@ def get_all_feedback():
     try:
         with get_db_connection() as connection:
             if connection:
-                cursor = connection.cursor(dictionary=True)
+                cursor = connection.cursor()
                 cursor.execute("SELECT * FROM feedback ORDER BY timestamp DESC")
                 results = cursor.fetchall()
-                cursor.close()
-                return pd.DataFrame(results)
-    except Error as e:
+                
+                # Convert to list of dictionaries
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
         st.error(f"Error getting all feedback: {e}")
     return pd.DataFrame()
 
@@ -231,7 +225,7 @@ def get_all_users():
     try:
         with get_db_connection() as connection:
             if connection:
-                cursor = connection.cursor(dictionary=True)
+                cursor = connection.cursor()
                 query = """
                 SELECT username, name, email, reg_no, room_no, last_login, created_at 
                 FROM users 
@@ -239,9 +233,12 @@ def get_all_users():
                 """
                 cursor.execute(query)
                 results = cursor.fetchall()
-                cursor.close()
-                return pd.DataFrame(results)
-    except Error as e:
+                
+                # Convert to list of dictionaries
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
         st.error(f"Error getting all users: {e}")
     return pd.DataFrame()
 
@@ -250,12 +247,15 @@ def get_admin_logs():
     try:
         with get_db_connection() as connection:
             if connection:
-                cursor = connection.cursor(dictionary=True)
+                cursor = connection.cursor()
                 cursor.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC")
                 results = cursor.fetchall()
-                cursor.close()
-                return pd.DataFrame(results)
-    except Error as e:
+                
+                # Convert to list of dictionaries
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
         st.error(f"Error getting admin logs: {e}")
     return pd.DataFrame()
 
@@ -273,18 +273,21 @@ def authenticate_user(username, password):
         with get_db_connection() as connection:
             if connection:
                 cursor = connection.cursor()
-                query = "SELECT username FROM users WHERE username = %s AND password = %s"
-                cursor.execute(query, (username, hash_password(password)))
+                cursor.execute(
+                    "SELECT username FROM users WHERE username = ? AND password = ?",
+                    (username, hash_password(password))
+                )
                 result = cursor.fetchone()
                 
                 if result:
                     # Update last login
-                    update_query = "UPDATE users SET last_login = %s WHERE username = %s"
-                    cursor.execute(update_query, (datetime.now(), username))
-                    cursor.close()
+                    cursor.execute(
+                        "UPDATE users SET last_login = ? WHERE username = ?",
+                        (datetime.now().isoformat(), username)
+                    )
+                    connection.commit()
                     return True
-                cursor.close()
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Authentication error: {e}")
     return False
 
@@ -296,17 +299,15 @@ def register_user(username, password, user_data):
                 cursor = connection.cursor()
                 
                 # Check if username already exists
-                cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
+                cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
                 if cursor.fetchone():
-                    cursor.close()
                     return False, "Username already exists"
                 
                 # Insert new user
-                query = """
-                INSERT INTO users (username, password, name, email, reg_no, room_no) 
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(query, (
+                cursor.execute("""
+                    INSERT INTO users (username, password, name, email, reg_no, room_no) 
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
                     username, 
                     hash_password(password),
                     user_data['name'],
@@ -314,10 +315,10 @@ def register_user(username, password, user_data):
                     user_data['reg_no'],
                     user_data['room_no']
                 ))
-                cursor.close()
+                connection.commit()
                 return True, "Registration successful"
                 
-    except Error as e:
+    except sqlite3.Error as e:
         return False, f"Registration error: {e}"
 
 def delete_user(username):
@@ -326,10 +327,10 @@ def delete_user(username):
         with get_db_connection() as connection:
             if connection:
                 cursor = connection.cursor()
-                cursor.execute("DELETE FROM users WHERE username = %s", (username,))
-                cursor.close()
+                cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+                connection.commit()
                 return True
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Error deleting user: {e}")
     return False
 
@@ -342,16 +343,15 @@ def submit_feedback(username, feedback_data):
         with get_db_connection() as connection:
             if connection:
                 cursor = connection.cursor()
-                query = """
-                INSERT INTO feedback (
-                    username, timestamp, hostel_feedback, hostel_rating,
-                    mess_feedback, mess_type, mess_rating, bathroom_feedback,
-                    bathroom_rating, other_comments
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(query, (
+                cursor.execute("""
+                    INSERT INTO feedback (
+                        username, timestamp, hostel_feedback, hostel_rating,
+                        mess_feedback, mess_type, mess_rating, bathroom_feedback,
+                        bathroom_rating, other_comments
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
                     username,
-                    datetime.now(),
+                    datetime.now().isoformat(),
                     feedback_data['hostel_feedback'],
                     feedback_data['hostel_rating'],
                     feedback_data['mess_feedback'],
@@ -361,9 +361,9 @@ def submit_feedback(username, feedback_data):
                     feedback_data['bathroom_rating'],
                     feedback_data['other_comments']
                 ))
-                cursor.close()
+                connection.commit()
                 return True
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Error submitting feedback: {e}")
     return False
 
@@ -374,9 +374,9 @@ def clear_admin_logs():
             if connection:
                 cursor = connection.cursor()
                 cursor.execute("DELETE FROM admin_logs")
-                cursor.close()
+                connection.commit()
                 return True
-    except Error as e:
+    except sqlite3.Error as e:
         st.error(f"Error clearing logs: {e}")
     return False
 
@@ -469,7 +469,7 @@ def main():
         if initialize_database():
             st.session_state.db_initialized = True
         else:
-            st.error("Failed to initialize database. Please check your database configuration.")
+            st.error("Failed to initialize database.")
             st.stop()
     
     # Debug info (remove in production)
@@ -479,6 +479,7 @@ def main():
         st.sidebar.write(f"Current user: {st.session_state.get('current_user', 'None')}")
         st.sidebar.write(f"Is admin: {st.session_state.get('is_admin', False)}")
         st.sidebar.write(f"DB initialized: {st.session_state.get('db_initialized', False)}")
+        st.sidebar.write(f"Database file exists: {os.path.exists(DB_PATH)}")
     
     # Sidebar Navigation
     st.sidebar.title("Hostel Feedback System")
@@ -708,15 +709,16 @@ def user_manager():
     
     st.subheader("User Actions")
     usernames = users_data['username'].tolist()
-    delete_username = st.selectbox("Select user to remove", usernames)
-    
-    if st.button("Delete User", type="primary"):
-        if delete_user(delete_username):
-            log_admin_action("USER_DELETION", f"Deleted user: {delete_username}")
-            st.success(f"User {delete_username} removed")
-            st.rerun()
-        else:
-            st.error("Failed to delete user")
+    if usernames:
+        delete_username = st.selectbox("Select user to remove", usernames)
+        
+        if st.button("Delete User", type="primary"):
+            if delete_user(delete_username):
+                log_admin_action("USER_DELETION", f"Deleted user: {delete_username}")
+                st.success(f"User {delete_username} removed")
+                st.rerun()
+            else:
+                st.error("Failed to delete user")
 
 def system_logs():
     if not st.session_state.get('is_admin'):
