@@ -1,7 +1,9 @@
-# Hostel Feedback System with Admin Controls
+# Hostel Feedback System with MySQL Database
 # Streamlit Application - Complete Code
 
 import streamlit as st
+import mysql.connector
+from mysql.connector import Error
 import pandas as pd
 import time
 from datetime import datetime
@@ -9,6 +11,8 @@ import hashlib
 from streamlit_lottie import st_lottie
 import requests
 import json
+import os
+from contextlib import contextmanager
 
 # ======================
 # CONFIGURATION
@@ -21,11 +25,101 @@ st.set_page_config(
 )
 
 # ======================
+# DATABASE CONFIGURATION
+# ======================
+# MySQL Database Configuration
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'database': os.getenv('DB_NAME', 'hostel_feedback_db'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', 'your_password_here'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'charset': 'utf8mb4',
+    'autocommit': True
+}
+
+# ======================
 # SECURITY SETTINGS
 # ======================
 # ADMIN CREDENTIALS [CHANGE THESE IN PRODUCTION]
 ADMIN_USERNAME = "hostel_admin"
 ADMIN_PASSWORD_HASH = hashlib.sha256("SecureAdminPass123!".encode()).hexdigest()
+
+# ======================
+# DATABASE CONNECTION MANAGEMENT
+# ======================
+@contextmanager
+def get_db_connection():
+    """Context manager for database connections"""
+    connection = None
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        yield connection
+    except Error as e:
+        st.error(f"Database connection error: {e}")
+        yield None
+    finally:
+        if connection and connection.is_connected():
+            connection.close()
+
+def initialize_database():
+    """Create database tables if they don't exist"""
+    create_tables_sql = """
+    -- Users table
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password VARCHAR(64) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) NOT NULL,
+        reg_no VARCHAR(20) NOT NULL,
+        room_no VARCHAR(10) NOT NULL,
+        last_login DATETIME,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Feedback table
+    CREATE TABLE IF NOT EXISTS feedback (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL,
+        timestamp DATETIME NOT NULL,
+        hostel_feedback TEXT,
+        hostel_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        mess_feedback TEXT,
+        mess_type ENUM('Veg', 'Non-Veg', 'Special', 'Food-Park') NOT NULL,
+        mess_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        bathroom_feedback TEXT,
+        bathroom_rating ENUM('A', 'B', 'C', 'D', 'E') NOT NULL,
+        other_comments TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+    );
+
+    -- Admin logs table
+    CREATE TABLE IF NOT EXISTS admin_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        timestamp DATETIME NOT NULL,
+        action VARCHAR(100) NOT NULL,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                # Execute each CREATE TABLE statement separately
+                for statement in create_tables_sql.split(';'):
+                    statement = statement.strip()
+                    if statement and not statement.startswith('--'):
+                        cursor.execute(statement)
+                cursor.close()
+                return True
+    except Error as e:
+        st.error(f"Database initialization error: {e}")
+        return False
+    return False
 
 # ======================
 # HELPER FUNCTIONS
@@ -42,46 +136,128 @@ def load_lottieurl(url):
     except:
         return None
 
-def init_databases():
-    """Initialize data storage"""
-    if 'users_db' not in st.session_state:
-        st.session_state.users_db = pd.DataFrame(columns=[
-            'username', 'password', 'name', 'email', 
-            'reg_no', 'room_no', 'last_login'
-        ])
-    
-    if 'feedback_db' not in st.session_state:
-        st.session_state.feedback_db = pd.DataFrame(columns=[
-            'username', 'timestamp', 'hostel_feedback', 'hostel_rating',
-            'mess_feedback', 'mess_type', 'mess_rating',
-            'bathroom_feedback', 'bathroom_rating', 'other_comments'
-        ])
-    
-    if 'admin_logs' not in st.session_state:
-        st.session_state.admin_logs = pd.DataFrame(columns=[
-            'timestamp', 'action', 'details'
-        ])
-    
-    # Initialize session state variables for login persistence
+def init_session_state():
+    """Initialize session state variables"""
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'current_user' not in st.session_state:
         st.session_state.current_user = None
     if 'is_admin' not in st.session_state:
         st.session_state.is_admin = False
+    if 'db_initialized' not in st.session_state:
+        st.session_state.db_initialized = False
 
 def log_admin_action(action, details=""):
     """Record admin activities"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_log = pd.DataFrame({
-        'timestamp': [timestamp],
-        'action': [action],
-        'details': [details]
-    })
-    st.session_state.admin_logs = pd.concat(
-        [st.session_state.admin_logs, new_log], 
-        ignore_index=True
-    )
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                timestamp = datetime.now()
+                query = "INSERT INTO admin_logs (timestamp, action, details) VALUES (%s, %s, %s)"
+                cursor.execute(query, (timestamp, action, details))
+                cursor.close()
+    except Error as e:
+        st.error(f"Error logging admin action: {e}")
+
+# ======================
+# DATABASE OPERATIONS
+# ======================
+def get_user_count():
+    """Get total number of registered users"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM users")
+                count = cursor.fetchone()[0]
+                cursor.close()
+                return count
+    except Error as e:
+        st.error(f"Error getting user count: {e}")
+    return 0
+
+def get_feedback_count():
+    """Get total number of feedback entries"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM feedback")
+                count = cursor.fetchone()[0]
+                cursor.close()
+                return count
+    except Error as e:
+        st.error(f"Error getting feedback count: {e}")
+    return 0
+
+def get_recent_feedback(limit=5):
+    """Get recent feedback entries"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                query = """
+                SELECT username, timestamp, hostel_rating, mess_type, mess_rating, 
+                       bathroom_rating, other_comments 
+                FROM feedback 
+                ORDER BY timestamp DESC 
+                LIMIT %s
+                """
+                cursor.execute(query, (limit,))
+                results = cursor.fetchall()
+                cursor.close()
+                return pd.DataFrame(results)
+    except Error as e:
+        st.error(f"Error getting recent feedback: {e}")
+    return pd.DataFrame()
+
+def get_all_feedback():
+    """Get all feedback entries"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM feedback ORDER BY timestamp DESC")
+                results = cursor.fetchall()
+                cursor.close()
+                return pd.DataFrame(results)
+    except Error as e:
+        st.error(f"Error getting all feedback: {e}")
+    return pd.DataFrame()
+
+def get_all_users():
+    """Get all users (without passwords)"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                query = """
+                SELECT username, name, email, reg_no, room_no, last_login, created_at 
+                FROM users 
+                ORDER BY created_at DESC
+                """
+                cursor.execute(query)
+                results = cursor.fetchall()
+                cursor.close()
+                return pd.DataFrame(results)
+    except Error as e:
+        st.error(f"Error getting all users: {e}")
+    return pd.DataFrame()
+
+def get_admin_logs():
+    """Get all admin logs"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM admin_logs ORDER BY timestamp DESC")
+                results = cursor.fetchall()
+                cursor.close()
+                return pd.DataFrame(results)
+    except Error as e:
+        st.error(f"Error getting admin logs: {e}")
+    return pd.DataFrame()
 
 # ======================
 # AUTHENTICATION FUNCTIONS
@@ -93,51 +269,116 @@ def authenticate_admin(username, password):
 
 def authenticate_user(username, password):
     """Verify student credentials"""
-    user = st.session_state.users_db[
-        (st.session_state.users_db['username'] == username) & 
-        (st.session_state.users_db['password'] == hash_password(password))
-    ]
-    if not user.empty:
-        st.session_state.users_db.loc[
-            st.session_state.users_db['username'] == username, 
-            'last_login'
-        ] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        return True
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                query = "SELECT username FROM users WHERE username = %s AND password = %s"
+                cursor.execute(query, (username, hash_password(password)))
+                result = cursor.fetchone()
+                
+                if result:
+                    # Update last login
+                    update_query = "UPDATE users SET last_login = %s WHERE username = %s"
+                    cursor.execute(update_query, (datetime.now(), username))
+                    cursor.close()
+                    return True
+                cursor.close()
+    except Error as e:
+        st.error(f"Authentication error: {e}")
     return False
 
 def register_user(username, password, user_data):
     """Register new student"""
-    if username in st.session_state.users_db['username'].values:
-        return False, "Username already exists"
-    
-    new_user = pd.DataFrame({
-        'username': [username],
-        'password': [hash_password(password)],
-        **user_data
-    })
-    
-    st.session_state.users_db = pd.concat(
-        [st.session_state.users_db, new_user], 
-        ignore_index=True
-    )
-    return True, "Registration successful"
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                
+                # Check if username already exists
+                cursor.execute("SELECT username FROM users WHERE username = %s", (username,))
+                if cursor.fetchone():
+                    cursor.close()
+                    return False, "Username already exists"
+                
+                # Insert new user
+                query = """
+                INSERT INTO users (username, password, name, email, reg_no, room_no) 
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(query, (
+                    username, 
+                    hash_password(password),
+                    user_data['name'],
+                    user_data['email'],
+                    user_data['reg_no'],
+                    user_data['room_no']
+                ))
+                cursor.close()
+                return True, "Registration successful"
+                
+    except Error as e:
+        return False, f"Registration error: {e}"
+
+def delete_user(username):
+    """Delete a user from database"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+                cursor.close()
+                return True
+    except Error as e:
+        st.error(f"Error deleting user: {e}")
+    return False
 
 # ======================
 # FEEDBACK FUNCTIONS
 # ======================
 def submit_feedback(username, feedback_data):
     """Submit new feedback"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_feedback = pd.DataFrame({
-        'username': [username],
-        'timestamp': [timestamp],
-        **feedback_data
-    })
-    st.session_state.feedback_db = pd.concat(
-        [st.session_state.feedback_db, new_feedback], 
-        ignore_index=True
-    )
-    return True
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                query = """
+                INSERT INTO feedback (
+                    username, timestamp, hostel_feedback, hostel_rating,
+                    mess_feedback, mess_type, mess_rating, bathroom_feedback,
+                    bathroom_rating, other_comments
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(query, (
+                    username,
+                    datetime.now(),
+                    feedback_data['hostel_feedback'],
+                    feedback_data['hostel_rating'],
+                    feedback_data['mess_feedback'],
+                    feedback_data['mess_type'],
+                    feedback_data['mess_rating'],
+                    feedback_data['bathroom_feedback'],
+                    feedback_data['bathroom_rating'],
+                    feedback_data['other_comments']
+                ))
+                cursor.close()
+                return True
+    except Error as e:
+        st.error(f"Error submitting feedback: {e}")
+    return False
+
+def clear_admin_logs():
+    """Clear all admin logs"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("DELETE FROM admin_logs")
+                cursor.close()
+                return True
+    except Error as e:
+        st.error(f"Error clearing logs: {e}")
+    return False
 
 # ======================
 # UI COMPONENTS
@@ -220,8 +461,16 @@ def render_login_page():
 # MAIN APPLICATION
 # ======================
 def main():
-    # Initialize databases and session state
-    init_databases()
+    # Initialize session state
+    init_session_state()
+    
+    # Initialize database on first run
+    if not st.session_state.db_initialized:
+        if initialize_database():
+            st.session_state.db_initialized = True
+        else:
+            st.error("Failed to initialize database. Please check your database configuration.")
+            st.stop()
     
     # Debug info (remove in production)
     if st.sidebar.checkbox("Show Debug Info", value=False):
@@ -229,11 +478,8 @@ def main():
         st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
         st.sidebar.write(f"Current user: {st.session_state.get('current_user', 'None')}")
         st.sidebar.write(f"Is admin: {st.session_state.get('is_admin', False)}")
+        st.sidebar.write(f"DB initialized: {st.session_state.get('db_initialized', False)}")
     
-    # Initialize current page in session state
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 'Home'
-
     # Sidebar Navigation
     st.sidebar.title("Hostel Feedback System")
     
@@ -324,18 +570,16 @@ def register_page():
                 st.error("Passwords don't match!")
             else:
                 user_data = {
-                    'name': [full_name],
-                    'email': [email],
-                    'reg_no': [reg_number],
-                    'room_no': [room_number],
-                    'last_login': [None]
+                    'name': full_name,
+                    'email': email,
+                    'reg_no': reg_number,
+                    'room_no': room_number
                 }
                 success, message = register_user(username, password, user_data)
                 if success:
                     st.success(message + " Please login.")
                     st.info("Redirecting to login page...")
                     time.sleep(2)
-                    # Use session state to control navigation instead of st.switch_page
                     st.session_state.show_login = True
                     st.rerun()
                 else:
@@ -367,18 +611,20 @@ def feedback_page():
         
         if st.form_submit_button("Submit Feedback", type="primary"):
             feedback_data = {
-                'hostel_feedback': [hostel_feedback],
-                'hostel_rating': [hostel_rating],
-                'mess_feedback': [mess_feedback],
-                'mess_type': [mess_type],
-                'mess_rating': [mess_rating],
-                'bathroom_feedback': [bathroom_feedback],
-                'bathroom_rating': [bathroom_rating],
-                'other_comments': [other_comments]
+                'hostel_feedback': hostel_feedback,
+                'hostel_rating': hostel_rating,
+                'mess_feedback': mess_feedback,
+                'mess_type': mess_type,
+                'mess_rating': mess_rating,
+                'bathroom_feedback': bathroom_feedback,
+                'bathroom_rating': bathroom_rating,
+                'other_comments': other_comments
             }
-            submit_feedback(st.session_state.current_user, feedback_data)
-            st.success("Thank you for your feedback!")
-            st.balloons()
+            if submit_feedback(st.session_state.current_user, feedback_data):
+                st.success("Thank you for your feedback!")
+                st.balloons()
+            else:
+                st.error("Failed to submit feedback. Please try again.")
 
 def faq_page():
     st.title("❓ Frequently Asked Questions")
@@ -411,19 +657,17 @@ def admin_dashboard():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("Total Users", len(st.session_state.users_db))
-        st.metric("Total Feedback", len(st.session_state.feedback_db))
+        st.metric("Total Users", get_user_count())
+        st.metric("Total Feedback", get_feedback_count())
         
     with col2:
         if lottie_admin := load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hu9uedjd.json"):
             st_lottie(lottie_admin, height=200)
     
     st.subheader("Recent Feedback")
-    if not st.session_state.feedback_db.empty:
-        st.dataframe(
-            st.session_state.feedback_db.sort_values('timestamp', ascending=False).head(5),
-            hide_index=True
-        )
+    recent_feedback = get_recent_feedback()
+    if not recent_feedback.empty:
+        st.dataframe(recent_feedback, hide_index=True)
     else:
         st.info("No feedback yet")
 
@@ -434,15 +678,16 @@ def feedback_viewer():
     
     st.title("🔍 Feedback Records")
     
-    if st.session_state.feedback_db.empty:
+    feedback_data = get_all_feedback()
+    if feedback_data.empty:
         st.info("No feedback submissions yet")
         return
     
-    st.dataframe(st.session_state.feedback_db)
+    st.dataframe(feedback_data)
     
     st.download_button(
         "Export as CSV",
-        st.session_state.feedback_db.to_csv(),
+        feedback_data.to_csv(index=False),
         "hostel_feedback.csv",
         "text/csv"
     )
@@ -454,25 +699,24 @@ def user_manager():
     
     st.title("👥 User Management")
     
-    if st.session_state.users_db.empty:
+    users_data = get_all_users()
+    if users_data.empty:
         st.info("No users registered yet")
         return
     
-    st.dataframe(st.session_state.users_db.drop(columns=['password']))
+    st.dataframe(users_data)
     
     st.subheader("User Actions")
-    delete_user = st.selectbox(
-        "Select user to remove",
-        st.session_state.users_db['username'].values
-    )
+    usernames = users_data['username'].tolist()
+    delete_username = st.selectbox("Select user to remove", usernames)
     
     if st.button("Delete User", type="primary"):
-        st.session_state.users_db = st.session_state.users_db[
-            st.session_state.users_db['username'] != delete_user
-        ]
-        log_admin_action("USER_DELETION", f"Deleted user: {delete_user}")
-        st.success(f"User {delete_user} removed")
-        st.rerun()
+        if delete_user(delete_username):
+            log_admin_action("USER_DELETION", f"Deleted user: {delete_username}")
+            st.success(f"User {delete_username} removed")
+            st.rerun()
+        else:
+            st.error("Failed to delete user")
 
 def system_logs():
     if not st.session_state.get('is_admin'):
@@ -481,17 +725,19 @@ def system_logs():
     
     st.title("📜 System Logs")
     
-    if st.session_state.admin_logs.empty:
+    logs_data = get_admin_logs()
+    if logs_data.empty:
         st.info("No system logs yet")
         return
     
-    st.dataframe(st.session_state.admin_logs)
+    st.dataframe(logs_data)
     
     if st.button("Clear Logs", type="secondary"):
-        st.session_state.admin_logs = pd.DataFrame(columns=[
-            'timestamp', 'action', 'details'
-        ])
-        st.rerun()
+        if clear_admin_logs():
+            st.success("Logs cleared successfully")
+            st.rerun()
+        else:
+            st.error("Failed to clear logs")
 
 # ======================
 # APPLICATION ENTRY
