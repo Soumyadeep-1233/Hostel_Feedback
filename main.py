@@ -7,6 +7,7 @@ import pandas as pd
 import time
 from datetime import datetime
 import hashlib
+from streamlit_lottie import st_lottie
 
 import requests
 import json
