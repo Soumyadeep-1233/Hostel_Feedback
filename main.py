@@ -8,8 +8,8 @@ import time
 from datetime import datetime
 import hashlib
 from streamlit_lottie import st_lottie
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import requests
 import json
@@ -548,31 +548,30 @@ def render_login_page():
                 else:
                     st.error("Invalid admin credentials")
 
-def create_rating_chart(data, title, rating_column):
-    """Create rating distribution chart"""
+def create_rating_chart(data, title):
+    """Create rating distribution chart using Streamlit native charts"""
     if data.empty:
         return None
     
-    fig = px.bar(
-        data, 
-        x='rating', 
-        y='count',
-        title=f"{title} Rating Distribution",
-        color='rating',
-        color_discrete_map={
-            'A': '#28a745',
-            'B': '#17a2b8', 
-            'C': '#ffc107',
-            'D': '#fd7e14',
-            'E': '#dc3545'
-        }
-    )
-    fig.update_layout(
-        xaxis_title="Rating",
-        yaxis_title="Number of Responses",
-        showlegend=False
-    )
-    return fig
+    # Create a bar chart using streamlit
+    st.subheader(f"{title} Rating Distribution")
+    
+    # Create color mapping
+    color_map = {'A': '#28a745', 'B': '#17a2b8', 'C': '#ffc107', 'D': '#fd7e14', 'E': '#dc3545'}
+    
+    # Display as columns with metrics
+    cols = st.columns(len(data))
+    for idx, (_, row) in enumerate(data.iterrows()):
+        with cols[idx]:
+            st.metric(
+                label=f"Rating {row['rating']}", 
+                value=int(row['count']),
+                help=f"{row['count']} responses with rating {row['rating']}"
+            )
+    
+    # Display as bar chart
+    chart_data = data.set_index('rating')
+    st.bar_chart(chart_data)
 
 # ======================
 # MAIN APPLICATION
@@ -821,9 +820,7 @@ def hostel_feedback_viewer():
     # Rating Distribution Chart
     rating_stats = get_rating_statistics('hostel')
     if not rating_stats.empty:
-        fig = create_rating_chart(rating_stats, "Hostel", "hostel_rating")
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
+        create_rating_chart(rating_stats, "Hostel")
     
     # Detailed Feedback Table
     st.subheader("Detailed Hostel Feedback")
@@ -892,28 +889,21 @@ def mess_feedback_viewer():
         latest_feedback = mess_data['timestamp'].max() if not mess_data.empty else 'N/A'
         st.metric("Latest Feedback", latest_feedback.split('T')[0] if latest_feedback != 'N/A' else 'N/A')
     
-    # Charts
-    col1, col2 = st.columns(2)
+    # Rating Distribution Chart
+    rating_stats = get_rating_statistics('mess')
+    if not rating_stats.empty:
+        create_rating_chart(rating_stats, "Mess")
     
-    with col1:
-        # Rating Distribution Chart
-        rating_stats = get_rating_statistics('mess')
-        if not rating_stats.empty:
-            fig = create_rating_chart(rating_stats, "Mess", "mess_rating")
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Mess Type Distribution
-        mess_type_counts = mess_data['mess_type'].value_counts().reset_index()
-        mess_type_counts.columns = ['mess_type', 'count']
-        fig_type = px.pie(
-            mess_type_counts, 
-            values='count', 
-            names='mess_type',
-            title="Mess Type Distribution"
-        )
-        st.plotly_chart(fig_type, use_container_width=True)
+    # Mess Type Distribution
+    st.subheader("Mess Type Distribution")
+    mess_type_counts = mess_data['mess_type'].value_counts()
+    if not mess_type_counts.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            for mess_type, count in mess_type_counts.items():
+                st.metric(mess_type, count)
+        with col2:
+            st.bar_chart(mess_type_counts)
     
     # Detailed Feedback Table
     st.subheader("Detailed Mess Feedback")
@@ -987,9 +977,7 @@ def bathroom_feedback_viewer():
     # Rating Distribution Chart
     rating_stats = get_rating_statistics('bathroom')
     if not rating_stats.empty:
-        fig = create_rating_chart(rating_stats, "Bathroom", "bathroom_rating")
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
+        create_rating_chart(rating_stats, "Bathroom")
     
     # Detailed Feedback Table
     st.subheader("Detailed Bathroom Feedback")
@@ -1057,28 +1045,35 @@ def feedback_viewer():
         avg_mess_rating = feedback_data['mess_rating'].mode().iloc[0] if not feedback_data.empty else 'N/A'
         st.metric("Common Mess Rating", avg_mess_rating)
     
-    # Rating Comparison Chart
+    # Rating Comparison Section
     st.subheader("Rating Comparison Across Categories")
     
-    # Prepare data for comparison
-    rating_comparison = []
-    for category in ['hostel', 'mess', 'bathroom']:
-        stats = get_rating_statistics(category)
-        if not stats.empty:
-            stats['category'] = category.title()
-            rating_comparison.append(stats)
+    # Display rating statistics for each category
+    col1, col2, col3 = st.columns(3)
     
-    if rating_comparison:
-        comparison_df = pd.concat(rating_comparison, ignore_index=True)
-        fig_comparison = px.bar(
-            comparison_df, 
-            x='rating', 
-            y='count',
-            color='category',
-            title="Rating Distribution Comparison",
-            barmode='group'
-        )
-        st.plotly_chart(fig_comparison, use_container_width=True)
+    with col1:
+        st.write("**Hostel Ratings**")
+        hostel_stats = get_rating_statistics('hostel')
+        if not hostel_stats.empty:
+            st.dataframe(hostel_stats, hide_index=True)
+        else:
+            st.info("No hostel ratings yet")
+    
+    with col2:
+        st.write("**Mess Ratings**")
+        mess_stats = get_rating_statistics('mess')
+        if not mess_stats.empty:
+            st.dataframe(mess_stats, hide_index=True)
+        else:
+            st.info("No mess ratings yet")
+    
+    with col3:
+        st.write("**Bathroom Ratings**")
+        bathroom_stats = get_rating_statistics('bathroom')
+        if not bathroom_stats.empty:
+            st.dataframe(bathroom_stats, hide_index=True)
+        else:
+            st.info("No bathroom ratings yet")
     
     # Advanced Filters
     st.subheader("Advanced Filtering")
@@ -1139,9 +1134,22 @@ def feedback_viewer():
                 "text/csv"
             )
         with col2:
-            # Export as Excel (if needed)
+            # Summary report
             if st.button("📊 Generate Summary Report"):
-                st.info("Summary report generation feature coming soon!")
+                st.success("Summary Report Generated!")
+                
+                # Create summary
+                summary_data = {
+                    'Total Feedback Entries': len(filtered_data),
+                    'Unique Users': filtered_data['username'].nunique(),
+                    'Date Range': f"{filtered_data['timestamp'].min().split('T')[0]} to {filtered_data['timestamp'].max().split('T')[0]}",
+                    'Most Common Hostel Rating': filtered_data['hostel_rating'].mode().iloc[0] if not filtered_data.empty else 'N/A',
+                    'Most Common Mess Rating': filtered_data['mess_rating'].mode().iloc[0] if not filtered_data.empty else 'N/A',
+                    'Most Common Bathroom Rating': filtered_data['bathroom_rating'].mode().iloc[0] if not filtered_data.empty else 'N/A',
+                    'Most Popular Mess Type': filtered_data['mess_type'].mode().iloc[0] if not filtered_data.empty else 'N/A'
+                }
+                
+                st.json(summary_data)
 
 def user_manager():
     if not st.session_state.get('is_admin'):
@@ -1196,13 +1204,12 @@ def user_manager():
                     st.error("Failed to delete user")
         
         with col2:
-            if st.button("📥 Export User Data"):
-                st.download_button(
-                    "Download Users CSV",
-                    users_data.to_csv(index=False),
-                    "users_data.csv",
-                    "text/csv"
-                )
+            st.download_button(
+                "📥 Export User Data",
+                users_data.to_csv(index=False),
+                "users_data.csv",
+                "text/csv"
+            )
 
 def system_logs():
     if not st.session_state.get('is_admin'):
@@ -1227,13 +1234,17 @@ def system_logs():
         latest_log = logs_data['timestamp'].max() if not logs_data.empty else 'N/A'
         st.metric("Latest Activity", latest_log.split('T')[0] if latest_log != 'N/A' else 'N/A')
     
-    # Action frequency chart
+    # Action frequency
+    st.subheader("Admin Actions Frequency")
     if not logs_data.empty:
-        action_counts = logs_data['action'].value_counts().reset_index()
-        action_counts.columns = ['action', 'count']
-        fig = px.bar(action_counts, x='action', y='count', title="Admin Actions Frequency")
-        fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
+        action_counts = logs_data['action'].value_counts()
+        if not action_counts.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                for action, count in action_counts.items():
+                    st.metric(action, count)
+            with col2:
+                st.bar_chart(action_counts)
     
     # Logs table
     st.subheader("Detailed Logs")
