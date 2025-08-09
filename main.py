@@ -588,15 +588,7 @@ def main():
             st.error("Failed to initialize database.")
             st.stop()
     
-    # Debug info (remove in production)
-    if st.sidebar.checkbox("Show Debug Info", value=False):
-        st.sidebar.write("Session State:")
-        st.sidebar.write(f"Logged in: {st.session_state.get('logged_in', False)}")
-        st.sidebar.write(f"Current user: {st.session_state.get('current_user', 'None')}")
-        st.sidebar.write(f"Is admin: {st.session_state.get('is_admin', False)}")
-        st.sidebar.write(f"DB initialized: {st.session_state.get('db_initialized', False)}")
-        st.sidebar.write(f"Database file exists: {os.path.exists(DB_PATH)}")
-    
+
     # Sidebar Navigation
     st.sidebar.title("Hostel Feedback System")
     
