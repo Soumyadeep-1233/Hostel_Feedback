@@ -8,8 +8,7 @@ import time
 from datetime import datetime
 import hashlib
 from streamlit_lottie import st_lottie
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Removed matplotlib and seaborn imports - not available in Streamlit Cloud
 
 import requests
 import json
@@ -556,18 +555,19 @@ def create_rating_chart(data, title):
     # Create a bar chart using streamlit
     st.subheader(f"{title} Rating Distribution")
     
-    # Create color mapping
-    color_map = {'A': '#28a745', 'B': '#17a2b8', 'C': '#ffc107', 'D': '#fd7e14', 'E': '#dc3545'}
-    
     # Display as columns with metrics
     cols = st.columns(len(data))
     for idx, (_, row) in enumerate(data.iterrows()):
         with cols[idx]:
-            st.metric(
-                label=f"Rating {row['rating']}", 
-                value=int(row['count']),
-                help=f"{row['count']} responses with rating {row['rating']}"
-            )
+            # Color coding for ratings
+            if row['rating'] == 'A':
+                st.success(f"**{row['rating']}** - {int(row['count'])}")
+            elif row['rating'] == 'B':
+                st.info(f"**{row['rating']}** - {int(row['count'])}")
+            elif row['rating'] == 'C':
+                st.warning(f"**{row['rating']}** - {int(row['count'])}")
+            elif row['rating'] in ['D', 'E']:
+                st.error(f"**{row['rating']}** - {int(row['count'])}")
     
     # Display as bar chart
     chart_data = data.set_index('rating')
