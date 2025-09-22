@@ -18,7 +18,7 @@ from contextlib import contextmanager
 # CONFIGURATION
 # ======================
 st.set_page_config(
-    page_title="Hostel Feedback System",
+    page_title="Hostel-Student Interaction System",
     page_icon="🏠",
     layout="wide",
     initial_sidebar_state="expanded"
