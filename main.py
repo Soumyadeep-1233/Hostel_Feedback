@@ -1,4 +1,5 @@
 # Hostel Feedback System with SQLite Database
+# Updated to match E-R Diagram specifications
 # Streamlit Application - Complete Code with Enhanced Admin Feedback Views
 
 import streamlit as st
@@ -8,8 +9,6 @@ import time
 from datetime import datetime
 import hashlib
 from streamlit_lottie import st_lottie
-# Removed matplotlib and seaborn imports - not available in Streamlit Cloud
-
 import requests
 import json
 import os
@@ -57,11 +56,11 @@ def get_db_connection():
             connection.close()
 
 def initialize_database():
-    """Create database tables if they don't exist"""
+    """Create database tables according to E-R diagram"""
     create_tables_sql = """
-    -- Users table
+    -- Users Table (matches E-R diagram exactly)
     CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -72,9 +71,45 @@ def initialize_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Feedback table
+    -- Hostel Table (from E-R diagram)
+    CREATE TABLE IF NOT EXISTS hostel (
+        hostel_id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        location TEXT NOT NULL
+    );
+
+    -- Room Table (from E-R diagram)
+    CREATE TABLE IF NOT EXISTS room (
+        room_id INTEGER PRIMARY KEY,
+        room_number TEXT NOT NULL,
+        type TEXT NOT NULL,
+        hostel_id INTEGER,
+        FOREIGN KEY (hostel_id) REFERENCES hostel(hostel_id) ON DELETE CASCADE
+    );
+
+    -- Guest Table (from E-R diagram - represents students staying in hostel)
+    CREATE TABLE IF NOT EXISTS guest (
+        guest_id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        user_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- Stay Table (Many-to-Many relationship between Guest and Room)
+    CREATE TABLE IF NOT EXISTS stays_in_room (
+        stay_id INTEGER PRIMARY KEY,
+        guest_id INTEGER NOT NULL,
+        room_id INTEGER NOT NULL,
+        check_in_date DATE NOT NULL,
+        check_out_date DATE,
+        FOREIGN KEY (guest_id) REFERENCES guest(guest_id) ON DELETE CASCADE,
+        FOREIGN KEY (room_id) REFERENCES room(room_id) ON DELETE CASCADE
+    );
+
+    -- Feedback Table (matches E-R diagram specifications exactly)
     CREATE TABLE IF NOT EXISTS feedback (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         timestamp DATETIME NOT NULL,
         hostel_feedback TEXT,
@@ -89,14 +124,29 @@ def initialize_database():
         FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
     );
 
-    -- Admin logs table
+    -- Admin Logs Table (matches E-R diagram)
     CREATE TABLE IF NOT EXISTS admin_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         timestamp DATETIME NOT NULL,
         action TEXT NOT NULL,
         details TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Insert default hostel data if not exists
+    INSERT OR IGNORE INTO hostel (hostel_id, name, location) VALUES 
+    (1, 'Main Hostel', 'Campus North'),
+    (2, 'Annexe Hostel', 'Campus South'),
+    (3, 'New Block', 'Campus East');
+
+    -- Insert default room data if not exists
+    INSERT OR IGNORE INTO room (room_id, room_number, type, hostel_id) VALUES 
+    (1, '101', 'Single', 1),
+    (2, '102', 'Double', 1),
+    (3, '103', 'Triple', 1),
+    (4, '201', 'Single', 2),
+    (5, '202', 'Double', 2),
+    (6, '301', 'Single', 3);
     """
     
     try:
@@ -153,7 +203,7 @@ def log_admin_action(action, details=""):
         st.error(f"Error logging admin action: {e}")
 
 # ======================
-# DATABASE OPERATIONS
+# DATABASE OPERATIONS (Updated for new schema)
 # ======================
 def get_user_count():
     """Get total number of registered users"""
@@ -167,6 +217,107 @@ def get_user_count():
     except sqlite3.Error as e:
         st.error(f"Error getting user count: {e}")
     return 0
+
+def get_guest_count():
+    """Get total number of guests"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM guest")
+                count = cursor.fetchone()[0]
+                return count
+    except sqlite3.Error as e:
+        st.error(f"Error getting guest count: {e}")
+    return 0
+
+def get_hostel_count():
+    """Get total number of hostels"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM hostel")
+                count = cursor.fetchone()[0]
+                return count
+    except sqlite3.Error as e:
+        st.error(f"Error getting hostel count: {e}")
+    return 0
+
+def get_room_count():
+    """Get total number of rooms"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM room")
+                count = cursor.fetchone()[0]
+                return count
+    except sqlite3.Error as e:
+        st.error(f"Error getting room count: {e}")
+    return 0
+
+def get_all_hostels():
+    """Get all hostels"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT * FROM hostel")
+                results = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
+        st.error(f"Error getting hostels: {e}")
+    return pd.DataFrame()
+
+def get_all_rooms():
+    """Get all rooms with hostel information"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                query = """
+                SELECT r.room_id, r.room_number, r.type, h.name as hostel_name, h.location
+                FROM room r
+                JOIN hostel h ON r.hostel_id = h.hostel_id
+                ORDER BY h.name, r.room_number
+                """
+                cursor.execute(query)
+                results = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
+        st.error(f"Error getting rooms: {e}")
+    return pd.DataFrame()
+
+def get_all_guests():
+    """Get all guests with their stay information"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                query = """
+                SELECT g.guest_id, g.name, g.email, u.username, u.reg_no,
+                       r.room_number, h.name as hostel_name,
+                       s.check_in_date, s.check_out_date
+                FROM guest g
+                LEFT JOIN users u ON g.user_id = u.id
+                LEFT JOIN stays_in_room s ON g.guest_id = s.guest_id
+                LEFT JOIN room r ON s.room_id = r.room_id
+                LEFT JOIN hostel h ON r.hostel_id = h.hostel_id
+                ORDER BY g.name
+                """
+                cursor.execute(query)
+                results = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                data = [dict(zip(columns, row)) for row in results]
+                return pd.DataFrame(data)
+    except sqlite3.Error as e:
+        st.error(f"Error getting guests: {e}")
+    return pd.DataFrame()
 
 def get_feedback_count():
     """Get total number of feedback entries"""
@@ -382,7 +533,7 @@ def authenticate_user(username, password):
     return False
 
 def register_user(username, password, user_data):
-    """Register new student"""
+    """Register new student and create guest record"""
     try:
         with get_db_connection() as connection:
             if connection:
@@ -405,6 +556,20 @@ def register_user(username, password, user_data):
                     user_data['reg_no'],
                     user_data['room_no']
                 ))
+                
+                # Get the inserted user's ID
+                user_id = cursor.lastrowid
+                
+                # Create corresponding guest record
+                cursor.execute("""
+                    INSERT INTO guest (name, email, user_id) 
+                    VALUES (?, ?, ?)
+                """, (
+                    user_data['name'],
+                    user_data['email'],
+                    user_id
+                ))
+                
                 connection.commit()
                 return True, "Registration successful"
                 
@@ -412,7 +577,7 @@ def register_user(username, password, user_data):
         return False, f"Registration error: {e}"
 
 def delete_user(username):
-    """Delete a user from database"""
+    """Delete a user from database (cascades to guest and stays)"""
     try:
         with get_db_connection() as connection:
             if connection:
@@ -422,6 +587,69 @@ def delete_user(username):
                 return True
     except sqlite3.Error as e:
         st.error(f"Error deleting user: {e}")
+    return False
+
+# ======================
+# NEW FUNCTIONS FOR E-R DIAGRAM ENTITIES
+# ======================
+def add_hostel(name, location):
+    """Add a new hostel"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("INSERT INTO hostel (name, location) VALUES (?, ?)", (name, location))
+                connection.commit()
+                return True
+    except sqlite3.Error as e:
+        st.error(f"Error adding hostel: {e}")
+    return False
+
+def add_room(room_number, room_type, hostel_id):
+    """Add a new room"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("INSERT INTO room (room_number, type, hostel_id) VALUES (?, ?, ?)", 
+                             (room_number, room_type, hostel_id))
+                connection.commit()
+                return True
+    except sqlite3.Error as e:
+        st.error(f"Error adding room: {e}")
+    return False
+
+def assign_room_to_guest(guest_id, room_id, check_in_date):
+    """Assign a room to a guest"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("""
+                    INSERT INTO stays_in_room (guest_id, room_id, check_in_date) 
+                    VALUES (?, ?, ?)
+                """, (guest_id, room_id, check_in_date))
+                connection.commit()
+                return True
+    except sqlite3.Error as e:
+        st.error(f"Error assigning room: {e}")
+    return False
+
+def checkout_guest(guest_id, room_id, check_out_date):
+    """Checkout a guest from room"""
+    try:
+        with get_db_connection() as connection:
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("""
+                    UPDATE stays_in_room 
+                    SET check_out_date = ? 
+                    WHERE guest_id = ? AND room_id = ? AND check_out_date IS NULL
+                """, (check_out_date, guest_id, room_id))
+                connection.commit()
+                return True
+    except sqlite3.Error as e:
+        st.error(f"Error checking out guest: {e}")
     return False
 
 # ======================
@@ -604,6 +832,9 @@ def main():
     if st.session_state.get('is_admin'):
         pages = {
             "Dashboard": admin_dashboard,
+            "Hostel Management": hostel_management,
+            "Room Management": room_management,
+            "Guest Management": guest_management,
             "Hostel Feedback": hostel_feedback_viewer,
             "Mess Feedback": mess_feedback_viewer,
             "Bathroom Feedback": bathroom_feedback_viewer,
@@ -766,15 +997,23 @@ def admin_dashboard():
     
     st.title("📊 Admin Dashboard")
     
-    col1, col2 = st.columns(2)
+    # Updated dashboard with new E-R entities
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Users", get_user_count())
-        st.metric("Total Feedback", get_feedback_count())
+        st.metric("Total Guests", get_guest_count())
         
     with col2:
+        st.metric("Total Hostels", get_hostel_count())
+        st.metric("Total Rooms", get_room_count())
+        
+    with col3:
+        st.metric("Total Feedback", get_feedback_count())
+        
+    with col4:
         if lottie_admin := load_lottieurl("https://assets1.lottiefiles.com/packages/lf20_hu9uedjd.json"):
-            st_lottie(lottie_admin, height=200)
+            st_lottie(lottie_admin, height=150)
     
     st.subheader("Recent Feedback")
     recent_feedback = get_recent_feedback()
@@ -782,6 +1021,210 @@ def admin_dashboard():
         st.dataframe(recent_feedback, hide_index=True)
     else:
         st.info("No feedback yet")
+
+def hostel_management():
+    """Manage hostels according to E-R diagram"""
+    if not st.session_state.get('is_admin'):
+        st.warning("Unauthorized access")
+        return
+    
+    st.title("🏢 Hostel Management")
+    log_admin_action("VIEWED_HOSTEL_MANAGEMENT")
+    
+    # Add new hostel
+    st.subheader("Add New Hostel")
+    with st.form("add_hostel_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            hostel_name = st.text_input("Hostel Name")
+        with col2:
+            hostel_location = st.text_input("Location")
+        
+        if st.form_submit_button("Add Hostel"):
+            if hostel_name and hostel_location:
+                if add_hostel(hostel_name, hostel_location):
+                    st.success(f"Hostel '{hostel_name}' added successfully!")
+                    log_admin_action("HOSTEL_ADDED", f"Added hostel: {hostel_name}")
+                    st.rerun()
+                else:
+                    st.error("Failed to add hostel")
+            else:
+                st.error("Please fill in all fields")
+    
+    # Display existing hostels
+    st.subheader("Existing Hostels")
+    hostels_data = get_all_hostels()
+    if not hostels_data.empty:
+        st.dataframe(
+            hostels_data,
+            column_config={
+                "hostel_id": "Hostel ID",
+                "name": "Hostel Name",
+                "location": "Location"
+            },
+            hide_index=True
+        )
+    else:
+        st.info("No hostels found")
+
+def room_management():
+    """Manage rooms according to E-R diagram"""
+    if not st.session_state.get('is_admin'):
+        st.warning("Unauthorized access")
+        return
+    
+    st.title("🏠 Room Management")
+    log_admin_action("VIEWED_ROOM_MANAGEMENT")
+    
+    # Add new room
+    st.subheader("Add New Room")
+    hostels_data = get_all_hostels()
+    
+    if not hostels_data.empty:
+        with st.form("add_room_form"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                room_number = st.text_input("Room Number")
+            with col2:
+                room_type = st.selectbox("Room Type", ["Single", "Double", "Triple", "Quad"])
+            with col3:
+                hostel_options = dict(zip(hostels_data['name'], hostels_data['hostel_id']))
+                selected_hostel = st.selectbox("Select Hostel", list(hostel_options.keys()))
+            
+            if st.form_submit_button("Add Room"):
+                if room_number and selected_hostel:
+                    hostel_id = hostel_options[selected_hostel]
+                    if add_room(room_number, room_type, hostel_id):
+                        st.success(f"Room {room_number} added to {selected_hostel}!")
+                        log_admin_action("ROOM_ADDED", f"Added room {room_number} to hostel {selected_hostel}")
+                        st.rerun()
+                    else:
+                        st.error("Failed to add room")
+                else:
+                    st.error("Please fill in all fields")
+    else:
+        st.warning("Please add hostels first before adding rooms")
+    
+    # Display existing rooms
+    st.subheader("Existing Rooms")
+    rooms_data = get_all_rooms()
+    if not rooms_data.empty:
+        st.dataframe(
+            rooms_data,
+            column_config={
+                "room_id": "Room ID",
+                "room_number": "Room Number",
+                "type": "Type",
+                "hostel_name": "Hostel",
+                "location": "Location"
+            },
+            hide_index=True
+        )
+    else:
+        st.info("No rooms found")
+
+def guest_management():
+    """Manage guests and their room assignments"""
+    if not st.session_state.get('is_admin'):
+        st.warning("Unauthorized access")
+        return
+    
+    st.title("👥 Guest Management")
+    log_admin_action("VIEWED_GUEST_MANAGEMENT")
+    
+    # Room assignment section
+    st.subheader("Room Assignment")
+    guests_data = get_all_guests()
+    rooms_data = get_all_rooms()
+    
+    if not guests_data.empty and not rooms_data.empty:
+        with st.form("assign_room_form"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Get guests without current room assignment
+                available_guests = guests_data[guests_data['room_number'].isna()]
+                if not available_guests.empty:
+                    guest_options = dict(zip(available_guests['name'], available_guests['guest_id']))
+                    selected_guest = st.selectbox("Select Guest", list(guest_options.keys()))
+                else:
+                    st.info("All guests are assigned rooms")
+                    selected_guest = None
+            
+            with col2:
+                if selected_guest:
+                    room_options = dict(zip(
+                        rooms_data['room_number'] + " (" + rooms_data['hostel_name'] + ")", 
+                        rooms_data['room_id']
+                    ))
+                    selected_room = st.selectbox("Select Room", list(room_options.keys()))
+                else:
+                    selected_room = None
+            
+            with col3:
+                check_in_date = st.date_input("Check-in Date", datetime.now().date())
+            
+            if st.form_submit_button("Assign Room") and selected_guest and selected_room:
+                guest_id = guest_options[selected_guest]
+                room_id = room_options[selected_room]
+                
+                if assign_room_to_guest(guest_id, room_id, check_in_date):
+                    st.success(f"Room assigned to {selected_guest}!")
+                    log_admin_action("ROOM_ASSIGNED", f"Assigned room to guest: {selected_guest}")
+                    st.rerun()
+                else:
+                    st.error("Failed to assign room")
+    
+    # Checkout section
+    st.subheader("Guest Checkout")
+    current_stays = guests_data[guests_data['check_out_date'].isna() & guests_data['room_number'].notna()]
+    
+    if not current_stays.empty:
+        with st.form("checkout_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                checkout_options = dict(zip(
+                    current_stays['name'] + " (Room " + current_stays['room_number'].astype(str) + ")",
+                    zip(current_stays['guest_id'], current_stays['room_number'])
+                ))
+                selected_checkout = st.selectbox("Select Guest to Checkout", list(checkout_options.keys()))
+            
+            with col2:
+                checkout_date = st.date_input("Checkout Date", datetime.now().date())
+            
+            if st.form_submit_button("Checkout Guest") and selected_checkout:
+                guest_id, room_number = checkout_options[selected_checkout]
+                # Find room_id from room_number
+                room_id = rooms_data[rooms_data['room_number'] == room_number]['room_id'].iloc[0]
+                
+                if checkout_guest(guest_id, room_id, checkout_date):
+                    st.success("Guest checked out successfully!")
+                    log_admin_action("GUEST_CHECKOUT", f"Guest checked out: {selected_checkout}")
+                    st.rerun()
+                else:
+                    st.error("Failed to checkout guest")
+    
+    # Display all guests
+    st.subheader("All Guests")
+    if not guests_data.empty:
+        st.dataframe(
+            guests_data,
+            column_config={
+                "guest_id": "Guest ID",
+                "name": "Name",
+                "email": "Email",
+                "username": "Username",
+                "reg_no": "Registration No",
+                "room_number": "Room Number",
+                "hostel_name": "Hostel",
+                "check_in_date": st.column_config.DateColumn("Check-in Date"),
+                "check_out_date": st.column_config.DateColumn("Check-out Date"),
+            },
+            hide_index=True
+        )
+    else:
+        st.info("No guests found")
 
 def hostel_feedback_viewer():
     """View hostel-specific feedback"""
